@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مساعد مراجعة القرآن</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2ecc71;
+            --primary-hover: #27ae60;
+            --glass-bg: rgba(255, 255, 255, 0.15);
+            --glass-border: rgba(255, 255, 255, 0.25);
+            --text-color: #ffffff;
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: var(--text-color);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        h2 { margin-top: 0; font-weight: 700; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+
+        .form-group {
+            margin-bottom: 15px;
+            text-align: right;
+        }
+        
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9em; }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            font-family: 'Cairo', sans-serif;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            border-radius: 10px;
+            border: none;
+            background: var(--primary);
+            color: white;
+            font-family: 'Cairo', sans-serif;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s ease;
+            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
+        }
+
+        button:hover { background: var(--primary-hover); transform: translateY(-2px); }
+        button.danger { background: #e74c3c; box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4); }
+        button.danger:hover { background: #c0392b; }
+        
+        .hidden { display: none !important; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .daily-task {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .ayah-highlight { color: #f1c40f; font-weight: bold; font-size: 1.2em;}
+    </style>
+</head>
+<body>
+
+    <div class="glass-panel" id="mainContainer">
+        
+        <!-- Loading Screen -->
+        <div id="loadingScreen">
+            <h2>جاري التحميل...</h2>
+            <div class="loader"></div>
+            <p>يتم الاتصال بقاعدة البيانات</p>
+        </div>
+
+        <!-- Setup Plan Screen -->
+        <div id="setupScreen" class="hidden">
+            <h2>إعداد خطة المراجعة</h2>
+            <p style="font-size: 0.9em; margin-bottom: 20px;">حدد النطاق الذي تحفظه لتوزيعه على أيام المراجعة</p>
+            
+            <div class="row">
+                <div class="form-group">
+                    <label>من سورة</label>
+                    <select id="startSurah" onchange="updateAyahs('start')"></select>
+                </div>
+                <div class="form-group">
+                    <label>آية رقم</label>
+                    <select id="startAyah"></select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="form-group">
+                    <label>إلى سورة</label>
+                    <select id="endSurah" onchange="updateAyahs('end')"></select>
+                </div>
+                <div class="form-group">
+                    <label>آية رقم</label>
+                    <select id="endAyah"></select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>فترة المراجعة (بالأيام)</label>
+                <input type="number" id="totalDays" min="1" value="20">
+            </div>
+
+            <button onclick="savePlan()">بدء الخطة</button>
+        </div>
+
+        <!-- Daily Review Screen -->
+        <div id="dailyScreen" class="hidden">
+            <h2 id="dayTitle">مراجعة اليوم (1)</h2>
+            <p>الورد المخصص لك اليوم هو:</p>
+            
+            <div class="daily-task">
+                <div>من: <span class="ayah-highlight" id="taskStart"></span></div>
+                <div style="margin: 10px 0;">إلى: <span class="ayah-highlight" id="taskEnd"></span></div>
+            </div>
+
+            <p id="congratsText" class="hidden" style="color: #2ecc71; font-weight: bold;">أتممت خطة المراجعة بنجاح! 🌟</p>
+            <button onclick="resetPlan()" style="background: rgba(255,255,255,0.2); margin-top: 10px; color: #fff;">إعداد خطة جديدة</button>
+        </div>
+
+        <!-- Checkin Screen (Ask about yesterday) -->
+        <div id="checkinScreen" class="hidden">
+            <h2>أهلاً بعودتك!</h2>
+            <p>هل أتممت ورد المراجعة الخاص بيوم أمس؟</p>
+            <button onclick="handleCheckin(true)">نعم، أتممته بفضل الله</button>
+            <button class="danger" onclick="handleCheckin(false)">لا، سأراجعه اليوم</button>
+        </div>
+
+    </div>
+
+    <script>
+        // === هام جداً: ضع رابط جوجل سكربت الخاص بك هنا ===
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyTaMnZ2lXBj2IZF5e1R7vVmKe7Inc7sDFRd8Dagy62vF1baPyfwyxamqeLkMpH0EU4dQ/exec";
+        // =================================================
+
+        // بيانات سور القرآن وعدد آياتها بالترتيب
+        const quranData = [
+            {name: 'الفاتحة', ayahs: 7}, {name: 'البقرة', ayahs: 286}, {name: 'آل عمران', ayahs: 200}, {name: 'النساء', ayahs: 176},
+            {name: 'المائدة', ayahs: 120}, {name: 'الأنعام', ayahs: 165}, {name: 'الأعراف', ayahs: 206}, {name: 'الأنفال', ayahs: 75},
+            {name: 'التوبة', ayahs: 129}, {name: 'يونس', ayahs: 109}, {name: 'هود', ayahs: 123}, {name: 'يوسف', ayahs: 111},
+            {name: 'الرعد', ayahs: 43}, {name: 'إبراهيم', ayahs: 52}, {name: 'الحجر', ayahs: 99}, {name: 'النحل', ayahs: 128},
+            {name: 'الإسراء', ayahs: 111}, {name: 'الكهف', ayahs: 110}, {name: 'مريم', ayahs: 98}, {name: 'طه', ayahs: 135},
+            {name: 'الأنبياء', ayahs: 112}, {name: 'الحج', ayahs: 78}, {name: 'المؤمنون', ayahs: 118}, {name: 'النور', ayahs: 64},
+            {name: 'الفرقان', ayahs: 77}, {name: 'الشعراء', ayahs: 227}, {name: 'النمل', ayahs: 93}, {name: 'القصص', ayahs: 88},
+            {name: 'العنكبوت', ayahs: 69}, {name: 'الروم', ayahs: 60}, {name: 'لقمان', ayahs: 34}, {name: 'السجدة', ayahs: 32},
+            {name: 'الأحزاب', ayahs: 73}, {name: 'سبأ', ayahs: 54}, {name: 'فاطر', ayahs: 45}, {name: 'يس', ayahs: 83},
+            {name: 'الصافات', ayahs: 182}, {name: 'ص', ayahs: 88}, {name: 'الزمر', ayahs: 75}, {name: 'غافر', ayahs: 85},
+            {name: 'فصلت', ayahs: 54}, {name: 'الشورى', ayahs: 53}, {name: 'الزخرف', ayahs: 89}, {name: 'الدخان', ayahs: 59},
+            {name: 'الجاثية', ayahs: 37}, {name: 'الأحقاف', ayahs: 35}, {name: 'محمد', ayahs: 38}, {name: 'الفتح', ayahs: 29},
+            {name: 'الحجرات', ayahs: 18}, {name: 'ق', ayahs: 45}, {name: 'الذاريات', ayahs: 60}, {name: 'الطور', ayahs: 49},
+            {name: 'النجم', ayahs: 62}, {name: 'القمر', ayahs: 55}, {name: 'الرحمن', ayahs: 78}, {name: 'الواقعة', ayahs: 96},
+            {name: 'الحديد', ayahs: 29}, {name: 'المجادلة', ayahs: 22}, {name: 'الحشر', ayahs: 24}, {name: 'الممتحنة', ayahs: 13},
+            {name: 'الصف', ayahs: 14}, {name: 'الجمعة', ayahs: 11}, {name: 'المنافقون', ayahs: 11}, {name: 'التغابن', ayahs: 18},
+            {name: 'الطلاق', ayahs: 12}, {name: 'التحريم', ayahs: 12}, {name: 'الملك', ayahs: 30}, {name: 'القلم', ayahs: 52},
+            {name: 'الحاقة', ayahs: 52}, {name: 'المعارج', ayahs: 44}, {name: 'نوح', ayahs: 28}, {name: 'الجن', ayahs: 28},
+            {name: 'المزمل', ayahs: 20}, {name: 'المدثر', ayahs: 56}, {name: 'القيامة', ayahs: 40}, {name: 'الإنسان', ayahs: 31},
+            {name: 'المرسلات', ayahs: 50}, {name: 'النبأ', ayahs: 40}, {name: 'النازعات', ayahs: 46}, {name: 'عبس', ayahs: 42},
+            {name: 'التكوير', ayahs: 29}, {name: 'الانفطار', ayahs: 19}, {name: 'المطففين', ayahs: 36}, {name: 'الانشقاق', ayahs: 25},
+            {name: 'البروج', ayahs: 22}, {name: 'الطارق', ayahs: 17}, {name: 'الأعلى', ayahs: 19}, {name: 'الغاشية', ayahs: 26},
+            {name: 'الفجر', ayahs: 30}, {name: 'البلد', ayahs: 20}, {name: 'الشمس', ayahs: 15}, {name: 'الليل', ayahs: 21},
+            {name: 'الضحى', ayahs: 11}, {name: 'الشرح', ayahs: 8}, {name: 'التين', ayahs: 8}, {name: 'العلق', ayahs: 19},
+            {name: 'القدر', ayahs: 5}, {name: 'البينة', ayahs: 8}, {name: 'الزلزلة', ayahs: 8}, {name: 'العاديات', ayahs: 11},
+            {name: 'القارعة', ayahs: 11}, {name: 'التكاثر', ayahs: 8}, {name: 'العصر', ayahs: 3}, {name: 'الهمزة', ayahs: 9},
+            {name: 'الفيل', ayahs: 5}, {name: 'قريش', ayahs: 4}, {name: 'الماعون', ayahs: 7}, {name: 'الكوثر', ayahs: 3},
+            {name: 'الكافرون', ayahs: 6}, {name: 'النصر', ayahs: 3}, {name: 'المسد', ayahs: 5}, {name: 'الإخلاص', ayahs: 4},
+            {name: 'الفلق', ayahs: 5}, {name: 'الناس', ayahs: 6}
+        ];
+
+        let currentUser = localStorage.getItem("quran_user_id");
+        if (!currentUser) {
+            currentUser = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem("quran_user_id", currentUser);
+        }
+
+        let userPlanData = null;
+
+        // التهيئة الأولية للواجهة
+        function initApp() {
+            if(SCRIPT_URL === "ضع_الرابط_الذي_نسخته_هنا"){
+                alert("برجاء إضافة رابط جوجل سكربت في الكود لكي يعمل التطبيق.");
+                return;
+            }
+            populateSurahs();
+            fetchData();
+        }
+
+        function populateSurahs() {
+            const startSelect = document.getElementById("startSurah");
+            const endSelect = document.getElementById("endSurah");
+            quranData.forEach((surah, index) => {
+                let opt1 = new Option(`${index + 1}. سورة ${surah.name}`, index);
+                let opt2 = new Option(`${index + 1}. سورة ${surah.name}`, index);
+                startSelect.add(opt1);
+                endSelect.add(opt2);
+            });
+            updateAyahs('start');
+            updateAyahs('end');
+        }
+
+        function updateAyahs(type) {
+            const surahIdx = document.getElementById(type + "Surah").value;
+            const ayahSelect = document.getElementById(type + "Ayah");
+            ayahSelect.innerHTML = "";
+            const count = quranData[surahIdx].ayahs;
+            for (let i = 1; i <= count; i++) {
+                ayahSelect.add(new Option(i, i));
+            }
+        }
+
+        // تحويل السورة والآية إلى رقم مطلق (من 1 إلى 6236)
+        function getAbsoluteAyah(surahIndex, ayahNumber) {
+            let absolute = 0;
+            for (let i = 0; i < surahIndex; i++) {
+                absolute += quranData[i].ayahs;
+            }
+            return absolute + parseInt(ayahNumber);
+        }
+
+        // تحويل الرقم المطلق لاسم سورة ورقم الآية بداخلها
+        function getSurahAndAyahFromAbsolute(absolute) {
+            let temp = absolute;
+            for (let i = 0; i < quranData.length; i++) {
+                if (temp <= quranData[i].ayahs) {
+                    return `سورة ${quranData[i].name} (آية ${temp})`;
+                }
+                temp -= quranData[i].ayahs;
+            }
+            return "سورة الناس (آية 6)";
+        }
+
+        function showScreen(screenId) {
+            ['loadingScreen', 'setupScreen', 'dailyScreen', 'checkinScreen'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        // جلب البيانات من شيت الإكسيل
+        function fetchData() {
+            showScreen('loadingScreen');
+            fetch(`${SCRIPT_URL}?action=getData&userId=${currentUser}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        userPlanData = data.data;
+                        checkDailyStatus();
+                    } else {
+                        showScreen('setupScreen'); // مستخدم جديد
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert("حدث خطأ في الاتصال بقاعدة البيانات");
+                    showScreen('setupScreen');
+                });
+        }
+
+        // حفظ الخطة الجديدة
+                // حفظ الخطة الجديدة
+        function savePlan() {
+            const sSurah = document.getElementById("startSurah").value;
+            const sAyah = document.getElementById("startAyah").value;
+            const eSurah = document.getElementById("endSurah").value;
+            const eAyah = document.getElementById("endAyah").value;
+            const days = document.getElementById("totalDays").value;
+
+            // الأرقام البرمجية (للحسابات)
+            const startAbs = getAbsoluteAyah(sSurah, sAyah);
+            const endAbs = getAbsoluteAyah(eSurah, eAyah);
+
+            if (startAbs >= endAbs) {
+                alert("نقطة النهاية يجب أن تكون بعد نقطة البداية!");
+                return;
+            }
+            if (days < 1) {
+                alert("عدد الأيام يجب أن يكون 1 على الأقل");
+                return;
+            }
+
+            // النص الواضح لحفظه في الإكسيل
+            const startText = getSurahAndAyahFromAbsolute(startAbs);
+            const endText = getSurahAndAyahFromAbsolute(endAbs);
+
+            showScreen('loadingScreen');
+            
+            // إضافة النصوص الواضحة في الرابط (مع عمل encode عشان الحروف العربية)
+            const url = `${SCRIPT_URL}?action=savePlan&userId=${currentUser}&startAbs=${startAbs}&endAbs=${endAbs}&totalDays=${days}&startText=${encodeURIComponent(startText)}&endText=${encodeURIComponent(endText)}`;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    fetchData(); // إعادة جلب البيانات
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert("حدث خطأ أثناء حفظ الخطة");
+                    showScreen('setupScreen');
+                });
+        }
+
+        // التحقق من حالة اليوم (هل يحتاج يسأله عن الأمس؟)
+        function checkDailyStatus() {
+            const todayStr = new Date().toDateString();
+            
+            // إذا كان اليوم هو نفس يوم آخر تحديث -> نعرض خطة اليوم الحالي مباشرة
+            if (userPlanData.lastUpdateDate === todayStr) {
+                renderDailyPlan();
+            } 
+            // إذا كان يوم جديد، واليوم الحالي مش أول يوم
+            else if (userPlanData.currentDay <= userPlanData.totalDays) {
+                showScreen('checkinScreen');
+            } else {
+                renderDailyPlan(); // لو خلص الخطة
+            }
+        }
+
+        // التعامل مع الإجابة على سؤال الأمس
+        function handleCheckin(didFinish) {
+            showScreen('loadingScreen');
+            const todayStr = new Date().toDateString();
+            
+            if (didFinish) {
+                userPlanData.currentDay++; // التقدم ليوم جديد
+            }
+            userPlanData.lastUpdateDate = todayStr; // تحديث تاريخ آخر زيارة على أي حال
+
+            fetch(`${SCRIPT_URL}?action=updateProgress&userId=${currentUser}&currentDay=${userPlanData.currentDay}`)
+                .then(res => res.json())
+                .then(data => {
+                    renderDailyPlan();
+                });
+        }
+
+        // حساب وعرض ورد اليوم
+        function renderDailyPlan() {
+            showScreen('dailyScreen');
+            
+            if (userPlanData.currentDay > userPlanData.totalDays) {
+                document.getElementById("dayTitle").innerText = "تمت المراجعة!";
+                document.querySelector(".daily-task").classList.add("hidden");
+                document.getElementById("congratsText").classList.remove("hidden");
+                return;
+            }
+
+            document.getElementById("dayTitle").innerText = `مراجعة اليوم (${userPlanData.currentDay} من ${userPlanData.totalDays})`;
+            document.querySelector(".daily-task").classList.remove("hidden");
+            document.getElementById("congratsText").classList.add("hidden");
+
+            const totalAyahs = userPlanData.endAbs - userPlanData.startAbs + 1;
+            const ayahsPerDay = Math.ceil(totalAyahs / userPlanData.totalDays);
+            
+            let todayStartAbs = parseInt(userPlanData.startAbs) + (userPlanData.currentDay - 1) * ayahsPerDay;
+            let todayEndAbs = todayStartAbs + ayahsPerDay - 1;
+            
+            // عشان ميتخطاش نقطة النهاية المحددة في آخر يوم
+            if (todayEndAbs > userPlanData.endAbs || userPlanData.currentDay == userPlanData.totalDays) {
+                todayEndAbs = userPlanData.endAbs;
+            }
+
+            document.getElementById("taskStart").innerText = getSurahAndAyahFromAbsolute(todayStartAbs);
+            document.getElementById("taskEnd").innerText = getSurahAndAyahFromAbsolute(todayEndAbs);
+        }
+
+        function resetPlan() {
+            showScreen('setupScreen');
+        }
+
+        // تشغيل التطبيق عند التحميل
+        window.onload = initApp;
+    </script>
+</body>
+</html>
