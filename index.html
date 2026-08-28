@@ -189,7 +189,7 @@
         /* النص ككتلة واحدة ممتدة */
         .quran-text {
             font-family: 'Amiri Quran', serif;
-            font-size: 23px;
+            font-size: 15px;
             line-height: 1.85;
             text-align: justify;
             text-justify: inter-word;
@@ -518,13 +518,14 @@
         </div>
     </div>
 
-    <!-- نافذة سؤال الأمس -->
-    <div id="checkinModal" class="modal-overlay hidden">
+    <!-- نافذة إتمام الورد عند الوصول لآخر الصفحة -->
+    <div id="completionModal" class="modal-overlay hidden">
         <div class="glass-panel">
-            <h2>أهلاً بعودتك! 🌟</h2>
-            <p>هل أتممت قراءة الورد المخصص ليوم أمس؟</p>
-            <button class="action-btn" onclick="handleCheckin(true)">نعم، أتممته بفضل الله</button>
-            <button class="action-btn danger" onclick="handleCheckin(false)">لا، سأقرأه اليوم</button>
+            <h2>ما شاء الله! 🌟</h2>
+            <p>لقد وصلت لنهاية ورد اليوم، هل أتممت القراءة؟</p>
+            <button class="action-btn" onclick="markDayCompleted()">نعم، أتممته بفضل الله</button>
+            <button class="action-btn close-btn"
+                onclick="document.getElementById('completionModal').classList.add('hidden')">ليس بعد</button>
         </div>
     </div>
 
@@ -560,7 +561,7 @@
             <h2 id="settingsTitle">إعدادات الورد</h2>
             <div class="form-group">
                 <label>القارئ</label>
-                <select id="reciterSelect" onchange="saveReciter()">
+                <select id="reciterSelect" onchange="saveReciter(); calculateTimeEstimation();">
                     <option value="ar.minshawi">محمد صديق المنشاوي (مرتل)</option>
                     <option value="ar.husary">محمود خليل الحصري (مرتل)</option>
                 </select>
@@ -575,11 +576,24 @@
                         onchange="updateAyahs('end')"></select></div>
                 <div class="form-group"><label>آية رقم</label><select id="endAyah"></select></div>
             </div>
-            <div class="form-group"><label>فترة المراجعة (بالأيام)</label><input type="number" id="totalDays" min="1"
-                    value="20"></div>
+            <div class="form-group">
+                <label>فترة المراجعة (بالأيام)</label>
+                <input type="number" id="totalDays" min="1" value="20" oninput="calculateTimeEstimation()">
+            </div>
+
+            <!-- شريط عرض الوقت التقريبي -->
+            <div id="timeEstimation"
+                style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; margin-bottom: 15px; font-size: 0.9em; text-align: center; font-weight: bold;">
+                ⏳ <span id="estMaxTime">أقصى مدة: --</span> | <span id="estMinTime">أقل مدة: --</span>
+            </div>
 
             <button class="action-btn" onclick="savePlan()">حفظ الخطة</button>
             <button class="action-btn close-btn" onclick="closeSettings()" id="closeSettingsBtn">إلغاء</button>
+
+            <!-- زر مسح البيانات -->
+            <button class="action-btn danger" onclick="resetApp()" style="margin-top: 15px;">🗑️ مسح كل البيانات والبدء
+                من
+                جديد</button>
         </div>
     </div>
 
@@ -626,9 +640,32 @@
         let currentPlaylist = [];
         let currentAudioIndex = 0;
         let audioPlayer = new Audio();
+        // عند انتظار تحميل البيانات (بطء الإنترنت)
+        audioPlayer.addEventListener('waiting', () => {
+            const btn = document.getElementById('playPauseBtn');
+            btn.innerHTML = '<div class="loader" style="width: 20px; height: 20px; border-width: 3px; margin: 0;"></div>';
+        });
+
+        // عند استئناف التشغيل بعد التحميل
+        audioPlayer.addEventListener('playing', () => {
+            updateAudioBtnUI(true);
+        });
+
+        // في حالة حدوث خطأ في الاتصال بالصوتيات
+        audioPlayer.addEventListener('error', () => {
+            const btn = document.getElementById('playPauseBtn');
+            btn.innerHTML = '⚠️';
+            setTimeout(() => {
+                // محاولة إعادة التشغيل بعد 3 ثواني
+                if (currentPlaylist.length > 0 && currentAudioIndex >= 0) {
+                    playAudioIndex(currentAudioIndex);
+                }
+            }, 3000);
+        });
 
         let playbackSpeeds = [1.0, 1.25, 1.5, 1.75, 2.0];
-        let currentSpeedIndex = 0;
+        // جلب السرعة المحفوظة أو استخدام 0 كافتراضي
+        let currentSpeedIndex = parseInt(localStorage.getItem('quran_audio_speed')) || 0;
 
         // حل مشكلة الريسيت للسرعة في متصفحات الموبايل (إجبار السرعة عند التشغيل)
         audioPlayer.addEventListener('play', () => {
@@ -640,7 +677,10 @@
             let speed = playbackSpeeds[currentSpeedIndex];
             document.getElementById('speedBtn').innerText = speed + 'x';
             audioPlayer.playbackRate = speed;
+            // حفظ السرعة الجديدة
+            localStorage.setItem('quran_audio_speed', currentSpeedIndex);
         }
+
 
         audioPlayer.onended = () => {
             if (currentAudioIndex < currentPlaylist.length - 1) {
@@ -648,6 +688,10 @@
             } else {
                 removeHighlights();
                 updateAudioBtnUI(false);
+                // تسجيل الإنجاز تلقائياً عند انتهاء الشيخ
+                if (userPlanData.lastUpdateDate !== new Date().toDateString()) {
+                    markDayCompleted(true);
+                }
             }
         };
 
@@ -694,13 +738,15 @@
             let item = currentPlaylist[index];
             audioPlayer.src = item.audioUrl;
 
-            // تطبيق السرعة قبل وبعد التشغيل لضمان استجابة كل المتصفحات
             audioPlayer.playbackRate = playbackSpeeds[currentSpeedIndex];
             audioPlayer.play().then(() => {
                 audioPlayer.playbackRate = playbackSpeeds[currentSpeedIndex];
-            });
+            }).catch(err => console.log("تأخر التشغيل: ", err));
 
             updateAudioBtnUI(true);
+
+            // تفعيل التحكم في الخلفية وشاشة القفل
+            updateMediaSession(item);
 
             let span = document.getElementById(item.spanId);
             if (span) {
@@ -762,7 +808,12 @@
         function openAppearance() { document.getElementById('appearanceModal').classList.remove('hidden'); }
         function closeAppearance() { document.getElementById('appearanceModal').classList.add('hidden'); }
 
-        window.onload = function () { initTheme(); populateSurahs(); fetchData(); };
+        window.onload = function () {
+            initTheme();
+            populateSurahs();
+            fetchData();
+            document.getElementById('speedBtn').innerText = playbackSpeeds[currentSpeedIndex] + 'x';
+        };
 
         function populateSurahs() {
             const startSelect = document.getElementById("startSurah"); const endSelect = document.getElementById("endSurah");
@@ -778,6 +829,7 @@
             const ayahSelect = document.getElementById(type + "Ayah");
             ayahSelect.innerHTML = "";
             for (let i = 1; i <= quranData[surahIdx].ayahs; i++) ayahSelect.add(new Option(i, i));
+            calculateTimeEstimation();
         }
 
         function getAbsoluteAyah(surahIndex, ayahNumber) {
@@ -815,21 +867,34 @@
         }
 
         function checkDailyStatus() {
-            const todayStr = new Date().toDateString();
-            if (userPlanData.lastUpdateDate === todayStr) renderDailyPlan();
-            else if (userPlanData.currentDay <= userPlanData.totalDays) document.getElementById('checkinModal').classList.remove('hidden');
-            else renderDailyPlan();
+            // عرض الورد مباشرة بدون السؤال عن الأمس
+            renderDailyPlan();
         }
 
-        function handleCheckin(didFinish) {
-            document.getElementById('checkinModal').classList.add('hidden');
+        function markDayCompleted(isAuto = false) {
+            document.getElementById('completionModal').classList.add('hidden');
+
             const todayStr = new Date().toDateString();
-            if (didFinish) userPlanData.currentDay++;
-            userPlanData.lastUpdateDate = todayStr;
-            document.getElementById('mushafContainer').classList.remove('hidden');
-            document.getElementById('mushafContainer').innerHTML = '<div class="loader"></div><p style="text-align:center;">جاري تجهيز الصفحات...</p>';
-            fetch(`${SCRIPT_URL}?action=updateProgress&userId=${currentUser}&currentDay=${userPlanData.currentDay}`)
-                .then(res => res.json()).then(data => { renderDailyPlan(); });
+
+            // التأكد إنه لم يتم تسجيل الورد اليوم مسبقاً
+            if (userPlanData.lastUpdateDate !== todayStr) {
+                userPlanData.currentDay++;
+                userPlanData.lastUpdateDate = todayStr;
+
+                if (!isAuto) {
+                    document.getElementById('mushafContainer').innerHTML = '<div class="loader"></div><p style="text-align:center;">جاري تسجيل إنجازك...</p>';
+                }
+
+                fetch(`${SCRIPT_URL}?action=updateProgress&userId=${currentUser}&currentDay=${userPlanData.currentDay}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (isAuto) {
+                            // رسالة تظهر لما الشيخ يخلص تلاوة لوحده
+                            alert("تم إنهاء التلاوة وتسجيل الورد بنجاح! 🌟");
+                        }
+                        renderDailyPlan();
+                    });
+            }
         }
 
         function openSettings() {
@@ -841,6 +906,7 @@
                 document.getElementById("totalDays").value = userPlanData.totalDays; document.getElementById('closeSettingsBtn').classList.remove('hidden');
             }
             document.getElementById('settingsModal').classList.remove('hidden');
+            calculateTimeEstimation();
         }
 
         function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
@@ -981,6 +1047,24 @@
                 container.innerHTML = fullHtml;
                 document.getElementById('audioPlayerBar').classList.remove('hidden');
 
+                // إضافة مستشعر لنهاية الصفحة
+                if (userPlanData.lastUpdateDate !== new Date().toDateString()) {
+                    let sentinel = document.createElement('div');
+                    sentinel.id = "endOfReadingSentinel";
+                    sentinel.style.height = "50px";
+                    sentinel.style.width = "100%";
+                    container.appendChild(sentinel);
+
+                    // تفعيل المراقبة لمعرفة متى يصل المستخدم لآخر الورد
+                    let observer = new IntersectionObserver((entries) => {
+                        if (entries[0].isIntersecting) {
+                            document.getElementById('completionModal').classList.remove('hidden');
+                            observer.disconnect(); // إيقاف المراقبة عشان متظهرش الرسالة مرتين
+                        }
+                    }, { threshold: 0.1 });
+                    observer.observe(sentinel);
+                }
+
             } catch (err) {
                 container.innerHTML = '<p style="color:red; text-align:center;">حدث خطأ. تأكد من اتصالك بالإنترنت.</p>';
             }
@@ -1008,6 +1092,67 @@
                 },
             });
         });
+
+        function updateMediaSession(item) {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: `تلاوة الآية`,
+                    artist: document.getElementById("audioReciterName").innerText,
+                    album: 'مساعد مراجعة القرآن',
+                    artwork: [{ src: 'icon.png', sizes: '512x512', type: 'image/png' }]
+                });
+
+                navigator.mediaSession.setActionHandler('play', togglePlay);
+                navigator.mediaSession.setActionHandler('pause', togglePlay);
+                navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+                navigator.mediaSession.setActionHandler('nexttrack', playNext);
+            }
+        }
+
+        // دالة مسح البيانات بالكامل
+            function resetApp() {
+                if (confirm("هل أنت متأكد أنك تريد مسح جميع البيانات؟\nسيتم حذف خطتك الحالية وسيعود التطبيق لحالته الأولى.")) {
+                    localStorage.clear();
+                    window.location.reload();
+                }
+            }
+
+            // دالة حساب الوقت التقريبي للورد
+            function calculateTimeEstimation() {
+                const startSurah = document.getElementById("startSurah").value;
+                const startAyah = document.getElementById("startAyah").value;
+                const endSurah = document.getElementById("endSurah").value;
+                const endAyah = document.getElementById("endAyah").value;
+                const days = parseInt(document.getElementById("totalDays").value) || 1;
+                const reciter = document.getElementById("reciterSelect").value;
+
+                if (!startAyah || !endAyah) return;
+
+                const startAbs = getAbsoluteAyah(startSurah, startAyah);
+                const endAbs = getAbsoluteAyah(endSurah, endAyah);
+
+                if (startAbs >= endAbs) {
+                    document.getElementById("estMaxTime").innerText = "نطاق خاطئ";
+                    document.getElementById("estMinTime").innerText = "--";
+                    return;
+                }
+
+                // حساب توزيع الآيات
+                const totalAyahs = endAbs - startAbs + 1;
+                const ayahsPerDay = Math.ceil(totalAyahs / days); // أقصى عدد آيات في اليوم
+                let lastDayAyahs = totalAyahs - (ayahsPerDay * (days - 1)); // أقل عدد آيات (غالباً في اليوم الأخير)
+                if (lastDayAyahs <= 0) lastDayAyahs = ayahsPerDay;
+
+                // متوسط زمن الآية بالثواني (الحصري أبطأ من المنشاوي)
+                const avgAyahSeconds = (reciter === "ar.husary") ? 14 : 11;
+
+                // تحويل الثواني لدقائق
+                const maxMinutes = Math.ceil((ayahsPerDay * avgAyahSeconds) / 60);
+                const minMinutes = Math.ceil((lastDayAyahs * avgAyahSeconds) / 60);
+
+                document.getElementById("estMaxTime").innerText = `أقصى مدة: ~${maxMinutes} دقيقة`;
+                document.getElementById("estMinTime").innerText = `أقل مدة: ~${minMinutes} دقيقة`;
+            }
     </script>
 </body>
 
