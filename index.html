@@ -984,6 +984,24 @@
                                 absNum: ayah.number, audioUrl: audioEdition[i].audio
                             };
                             allTargetAyahs.push(ayahData);
+
+                            // ------ الكود الجديد لإضافة البسملة في الصوت ------
+                            // لو دي أول آية في السورة (ومش سورة الفاتحة ولا سورة التوبة)
+                            if (ayah.numberInSurah === 1 && res.data[0].number !== 1 && res.data[0].number !== 9) {
+                                // بنستخرج رابط صوت البسملة (الآية رقم 1 في القرآن) لنفس الشيخ
+                                let baseUrl = audioEdition[i].audio.substring(0, audioEdition[i].audio.lastIndexOf('/'));
+                                let basmalahUrl = baseUrl + '/1.mp3';
+
+                                // بنضيف البسملة لقائمة التشغيل الأول
+                                currentPlaylist.push({
+                                    spanId: `ayah-span-${ayah.number}`, // عشان يظلل الآية الأولى وهو بيقرأ البسملة
+                                    audioUrl: basmalahUrl,
+                                    absNum: ayah.number
+                                });
+                            }
+                            // ---------------------------------------------------
+
+                            // إضافة الآية الأساسية لقائمة التشغيل
                             currentPlaylist.push({
                                 spanId: `ayah-span-${ayah.number}`, audioUrl: audioEdition[i].audio, absNum: ayah.number
                             });
@@ -1110,49 +1128,49 @@
         }
 
         // دالة مسح البيانات بالكامل
-            function resetApp() {
-                if (confirm("هل أنت متأكد أنك تريد مسح جميع البيانات؟\nسيتم حذف خطتك الحالية وسيعود التطبيق لحالته الأولى.")) {
-                    localStorage.clear();
-                    window.location.reload();
-                }
+        function resetApp() {
+            if (confirm("هل أنت متأكد أنك تريد مسح جميع البيانات؟\nسيتم حذف خطتك الحالية وسيعود التطبيق لحالته الأولى.")) {
+                localStorage.clear();
+                window.location.reload();
+            }
+        }
+
+        // دالة حساب الوقت التقريبي للورد
+        function calculateTimeEstimation() {
+            const startSurah = document.getElementById("startSurah").value;
+            const startAyah = document.getElementById("startAyah").value;
+            const endSurah = document.getElementById("endSurah").value;
+            const endAyah = document.getElementById("endAyah").value;
+            const days = parseInt(document.getElementById("totalDays").value) || 1;
+            const reciter = document.getElementById("reciterSelect").value;
+
+            if (!startAyah || !endAyah) return;
+
+            const startAbs = getAbsoluteAyah(startSurah, startAyah);
+            const endAbs = getAbsoluteAyah(endSurah, endAyah);
+
+            if (startAbs >= endAbs) {
+                document.getElementById("estMaxTime").innerText = "نطاق خاطئ";
+                document.getElementById("estMinTime").innerText = "--";
+                return;
             }
 
-            // دالة حساب الوقت التقريبي للورد
-            function calculateTimeEstimation() {
-                const startSurah = document.getElementById("startSurah").value;
-                const startAyah = document.getElementById("startAyah").value;
-                const endSurah = document.getElementById("endSurah").value;
-                const endAyah = document.getElementById("endAyah").value;
-                const days = parseInt(document.getElementById("totalDays").value) || 1;
-                const reciter = document.getElementById("reciterSelect").value;
+            // حساب توزيع الآيات
+            const totalAyahs = endAbs - startAbs + 1;
+            const ayahsPerDay = Math.ceil(totalAyahs / days); // أقصى عدد آيات في اليوم
+            let lastDayAyahs = totalAyahs - (ayahsPerDay * (days - 1)); // أقل عدد آيات (غالباً في اليوم الأخير)
+            if (lastDayAyahs <= 0) lastDayAyahs = ayahsPerDay;
 
-                if (!startAyah || !endAyah) return;
+            // متوسط زمن الآية بالثواني (الحصري أبطأ من المنشاوي)
+            const avgAyahSeconds = (reciter === "ar.husary") ? 14 : 11;
 
-                const startAbs = getAbsoluteAyah(startSurah, startAyah);
-                const endAbs = getAbsoluteAyah(endSurah, endAyah);
+            // تحويل الثواني لدقائق
+            const maxMinutes = Math.ceil((ayahsPerDay * avgAyahSeconds) / 60);
+            const minMinutes = Math.ceil((lastDayAyahs * avgAyahSeconds) / 60);
 
-                if (startAbs >= endAbs) {
-                    document.getElementById("estMaxTime").innerText = "نطاق خاطئ";
-                    document.getElementById("estMinTime").innerText = "--";
-                    return;
-                }
-
-                // حساب توزيع الآيات
-                const totalAyahs = endAbs - startAbs + 1;
-                const ayahsPerDay = Math.ceil(totalAyahs / days); // أقصى عدد آيات في اليوم
-                let lastDayAyahs = totalAyahs - (ayahsPerDay * (days - 1)); // أقل عدد آيات (غالباً في اليوم الأخير)
-                if (lastDayAyahs <= 0) lastDayAyahs = ayahsPerDay;
-
-                // متوسط زمن الآية بالثواني (الحصري أبطأ من المنشاوي)
-                const avgAyahSeconds = (reciter === "ar.husary") ? 14 : 11;
-
-                // تحويل الثواني لدقائق
-                const maxMinutes = Math.ceil((ayahsPerDay * avgAyahSeconds) / 60);
-                const minMinutes = Math.ceil((lastDayAyahs * avgAyahSeconds) / 60);
-
-                document.getElementById("estMaxTime").innerText = `أقصى مدة: ~${maxMinutes} دقيقة`;
-                document.getElementById("estMinTime").innerText = `أقل مدة: ~${minMinutes} دقيقة`;
-            }
+            document.getElementById("estMaxTime").innerText = `أقصى مدة: ~${maxMinutes} دقيقة`;
+            document.getElementById("estMinTime").innerText = `أقل مدة: ~${minMinutes} دقيقة`;
+        }
     </script>
 </body>
 
